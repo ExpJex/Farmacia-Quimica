@@ -1407,3 +1407,1204 @@ const DIANA={
        q:'Los oligonucleótidos antisentido de ___ generación tienen modificaciones como ___ para resistir nucleasas y mejorar ___ tisular.',
        tmpl:['ASO de ','[0]',' generación tienen ','[1]',' para resistir nucleasas y mejorar ','[2]',' tisular.'],
        blanks:['2ª-3ª','modificaciones químicas','distribución'],
+       opts:['Solo en 1ª generación','2ª-3ª generación con PS, 2\'OMe, LNA, etc.','Solo en siRNA','No necesitan modificaciones'],
+       correct:1,wrongExps:['Los ASO de 1ª gen. son poco estables.','','siRNA también tiene modificaciones pero son distintos.','Sin modificaciones se degradan rápidamente en plasma.'],
+       exp:'Los ASO de 2ª y 3ª generación incorporan modificaciones: fosfotioato (PS) en el backbone, 2\'-O-metil, 2\'-O-metoxietil, ácidos nucleicos bloqueados (LNA), morfolinos. Aumentan resistencia a nucleasas y mejoran distribución tisular (semivida de días a semanas vs minutos).'},
+    ]
+  }
+};
+
+// ══════════════════════════════════════════════════
+// GLOBAL STATE
+// ══════════════════════════════════════════════════
+const G={
+  xp:0,streak:0,maxStreak:0,
+  phasesDone:0,lessonsMastered:0,
+  achUnlocked:new Set(),
+  disc:{progress:{},mastered:{}},
+  clin:{progress:{},mastered:{}},
+  diana:{progress:{},mastered:{}},
+  activeCourse:'disc',
+  activeLesson:null,activePhase:0,
+  qIdx:0,hearts:3,
+  answered:false,
+  wrongAnswers:[],
+  reviewMode:false,reviewQs:[],reviewIdx:0,
+  isDiamond:false,diamondQs:[],diamondIdx:0,diamondHearts:1,
+  combo:0,
+};
+
+function save(){try{localStorage.setItem('fg3',JSON.stringify({xp:G.xp,streak:G.streak,maxStreak:G.maxStreak,phasesDone:G.phasesDone,lessonsMastered:G.lessonsMastered,achUnlocked:[...G.achUnlocked],disc:G.disc,clin:G.clin,diana:G.diana}));}catch(e){}}
+function load(){try{const d=JSON.parse(localStorage.getItem('fg3'));if(!d)return;G.xp=d.xp||0;G.streak=d.streak||0;G.maxStreak=d.maxStreak||0;G.phasesDone=d.phasesDone||0;G.lessonsMastered=d.lessonsMastered||0;G.achUnlocked=new Set(d.achUnlocked||[]);G.disc=d.disc||{progress:{},mastered:{}};G.clin=d.clin||{progress:{},mastered:{}};G.diana=d.diana||{progress:{},mastered:{}};}catch(e){}}
+
+function getCourse(id){return {disc:DISC,clin:CLIN,diana:DIANA}[id]||DISC;}
+function getCourseState(id){return G[id]||{progress:{},mastered:{}};}
+
+// ══════════════════════════════════════════════════
+// SCREEN NAVIGATION
+// ══════════════════════════════════════════════════
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el=document.getElementById(id);
+  if(el){el.classList.add('active');el.scrollTop=0;}
+}
+
+function showHome(){
+  document.body.className='';
+  updateHomeUI();
+  showScreen('home');
+}
+
+function showMap(){
+  const course=getCourse(G.activeCourse);
+  document.body.className=course.mode;
+  renderMap();
+  showScreen('map');
+}
+
+function selectCourse(id){
+  G.activeCourse=id;
+  sfx.select();
+  showMap();
+}
+
+// ══════════════════════════════════════════════════
+// HOME UI
+// ══════════════════════════════════════════════════
+function updateHomeUI(){
+  const lv=getLevel(G.xp);
+  document.getElementById('h-xp').textContent=G.xp;
+  document.getElementById('h-streak').textContent=G.streak;
+  document.getElementById('h-lv').textContent='Nv.'+lv.n;
+  document.getElementById('h-lv-name').textContent='Nivel '+lv.n+' — '+lv.name;
+  const pct=lv.max===Infinity?100:Math.round((G.xp-lv.min)/(lv.max-lv.min)*100);
+  document.getElementById('h-lv-xp').textContent=G.xp+' / '+(lv.max===Infinity?'MAX':lv.max)+' XP';
+  document.getElementById('h-lv-bar').style.width=pct+'%';
+  document.getElementById('hs-lessons').textContent=G.lessonsMastered;
+  document.getElementById('hs-phases').textContent=G.phasesDone;
+  document.getElementById('hs-ach').textContent=G.achUnlocked.size;
+
+  ['disc','clin','diana'].forEach(cid=>{
+    const course=getCourse(cid);
+    const cs=getCourseState(cid);
+    const lessons=course.lessons||[];
+    const total=lessons.length;
+    const done=lessons.filter(l=>cs.mastered[l.id]).length;
+    const pct2=total?Math.round(done/total*100):0;
+    const xpEarned=Object.values(cs.progress||{}).reduce((a,v)=>a+(v.xp||0),0);
+    const el=id=>document.getElementById(id);
+    if(el(cid+'-prog-label'))el(cid+'-prog-label').textContent=pct2+'%';
+    if(el(cid+'-prog-bar'))el(cid+'-prog-bar').style.width=pct2+'%';
+    if(el(cid+'-s1'))el(cid+'-s1').textContent=done;
+    if(el(cid+'-s2'))el(cid+'-s2').textContent=xpEarned;
+  });
+  initParticles();
+}
+
+function initParticles(){
+  ['disc','clin','diana'].forEach(cid=>{
+    const container=document.getElementById(cid+'-particles');
+    if(!container||container.children.length)return;
+    const icons={disc:['🔬','💊','🧪'],clin:['🏥','📋','💉'],diana:['🎯','🧬','⚗️']};
+    icons[cid].forEach((ic,i)=>{
+      const s=document.createElement('span');
+      s.textContent=ic;
+      s.style.cssText='left:'+(20+i*28)+'%;animation-delay:'+(i*1.3)+'s;animation-duration:'+(3.5+i*0.7)+'s';
+      container.appendChild(s);
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════
+// MAP RENDER
+// ══════════════════════════════════════════════════
+function renderMap(){
+  const course=getCourse(G.activeCourse);
+  const cs=getCourseState(G.activeCourse);
+  const bar=document.getElementById('map-bar');
+  bar.style.borderBottomColor=course.color;
+  document.getElementById('map-logo').textContent=course.icon+' '+course.name;
+  document.getElementById('m-xp').textContent=G.xp;
+  document.getElementById('m-str').textContent=G.streak;
+  document.getElementById('m-lv').textContent='Nv.'+getLevel(G.xp).n;
+
+  const body=document.getElementById('map-body');
+  body.innerHTML='';
+
+  // Unit header
+  const uc=document.createElement('div');
+  uc.className='unit-card '+course.cls;
+  uc.innerHTML=`<div class="uc-title ${course.cls}">${course.icon} ${course.unit.title}</div><div class="uc-sub">${course.unit.sub}</div>`;
+  body.appendChild(uc);
+
+  const path=document.createElement('div');
+  path.className='nodes-path';
+
+  course.lessons.forEach((lesson,idx)=>{
+    const prog=cs.progress[lesson.id]||{};
+    const mastered=cs.mastered[lesson.id]||false;
+    const phasesDone=prog.phases||0;
+    const isLocked=idx>0&&!cs.progress[course.lessons[idx-1].id];
+    const isActive=!isLocked&&!mastered&&phasesDone<lesson.phases.length;
+    const isCompleted=phasesDone>=lesson.phases.length&&!mastered;
+
+    if(idx>0){
+      const gap=document.createElement('div');
+      gap.className='node-gap'+(isCompleted||mastered?' done '+course.cls:'');
+      path.appendChild(gap);
+    }
+
+    const node=document.createElement('div');
+    let nodeClass='lesson-node';
+    if(isLocked)nodeClass+=' locked-node';
+    else if(mastered)nodeClass+=' mastered-node';
+    else if(isCompleted)nodeClass+=' completed-node';
+    else if(isActive)nodeClass+=' active-node';
+    node.className=nodeClass;
+
+    if(!isLocked){
+      node.onclick=()=>{sfx.click();startLesson(lesson,idx);};
+    }
+
+    const phaseDots=lesson.phases.map((_,pi)=>{
+      let cls='lp-dot';
+      if(mastered)cls+=' mastered';
+      else if(pi<phasesDone)cls+=' done '+course.cls;
+      return `<div class="${cls}"></div>`;
+    }).join('');
+
+    const statusLabel=mastered?'⭐ Dominado':isCompleted?'✓ Completo':isActive?'→ Activo':'🔒 Bloqueado';
+    node.innerHTML=`
+      <div class="ln-icon">${lesson.icon}</div>
+      <div class="ln-info">
+        <div class="ln-title">${lesson.name}</div>
+        <div class="ln-phases">${phaseDots}</div>
+        <div class="ln-meta">${statusLabel} · ${lesson.xpTotal} XP</div>
+      </div>`;
+
+    if(isActive&&idx===0&&phasesDone===0&&idx===course.lessons.findIndex(l=>!cs.progress[l.id])){
+      const badge=document.createElement('div');
+      badge.className='ln-badge new';
+      badge.textContent='NUEVO';
+      node.appendChild(badge);
+    }
+
+    path.appendChild(node);
+  });
+
+  // Diamond lesson node
+  const allMastered=course.lessons.every(l=>cs.mastered[l.id]);
+  if(course.diamondLesson){
+    const gap=document.createElement('div');
+    gap.className='node-gap'+(allMastered?' done '+course.cls:'');
+    path.appendChild(gap);
+
+    const dNode=document.createElement('div');
+    dNode.className='lesson-node diamond-node'+(allMastered?'':' locked-node');
+    if(allMastered){
+      dNode.onclick=()=>{sfx.diamond();startDiamond();};
+    }
+    dNode.innerHTML=`
+      <div class="ln-icon">💎</div>
+      <div class="ln-info">
+        <div class="ln-title">${course.diamondLesson.name}</div>
+        <div class="ln-meta">${allMastered?'💎 Disponible':'🔒 Domina todas las lecciones'} · ${course.diamondLesson.xpTotal} XP</div>
+      </div>`;
+    path.appendChild(dNode);
+  }
+
+  body.appendChild(path);
+}
+
+// ══════════════════════════════════════════════════
+// LESSON ENGINE
+// ══════════════════════════════════════════════════
+function startLesson(lesson,lessonIdx){
+  const course=getCourse(G.activeCourse);
+  const cs=getCourseState(G.activeCourse);
+  const prog=cs.progress[lesson.id]||{};
+  const phaseIdx=prog.phases||0;
+
+  if(phaseIdx>=lesson.phases.length){
+    // Re-do for mastery
+    G.activeLesson=lesson;
+    G.activePhase=0;
+    G.isDiamond=false;
+    G.wrongAnswers=[];
+    loadPhase(0);
+    return;
+  }
+
+  G.activeLesson=lesson;
+  G.activePhase=phaseIdx;
+  G.isDiamond=false;
+  G.wrongAnswers=[];
+  loadPhase(phaseIdx);
+}
+
+function loadPhase(phaseIdx){
+  const lesson=G.activeLesson;
+  const phase=lesson.phases[phaseIdx];
+  const course=getCourse(G.activeCourse);
+
+  G.qIdx=0;
+  G.hearts=3;
+  G.answered=false;
+  G.combo=0;
+
+  document.body.className=course.mode;
+  const pill=document.getElementById('les-phase-pill');
+  pill.className='phase-pill '+course.cls;
+  pill.textContent=phase.name;
+
+  document.getElementById('les-back').onclick=()=>{if(confirm('¿Salir de la lección?'))showMap();};
+  document.getElementById('fb-btn').onclick=()=>nextQuestion();
+  document.getElementById('c-btn').onclick=()=>verifyAnswer();
+
+  renderHearts();
+  showScreen('lesson');
+  renderQuestion();
+}
+
+function renderHearts(){
+  const row=document.getElementById('les-hearts');
+  row.innerHTML=['❤️','❤️','❤️'].map((h,i)=>i<G.hearts?'❤️':'🖤').join('');
+}
+
+function updateProgress(){
+  const phase=G.activeLesson.phases[G.activePhase];
+  const pct=G.qIdx/phase.qs.length*100;
+  document.getElementById('les-prog-fill').style.width=pct+'%';
+}
+
+function renderQuestion(){
+  const phase=G.activeLesson.phases[G.activePhase];
+  const q=phase.qs[G.qIdx];
+  const course=getCourse(G.activeCourse);
+  const content=document.getElementById('les-content');
+  content.innerHTML='';
+  G.answered=false;
+
+  // Hide feedback
+  document.getElementById('fb-panel').classList.remove('show');
+  document.getElementById('c-btn').disabled=false;
+  document.getElementById('c-btn').textContent='VERIFICAR';
+  document.getElementById('c-btn').style.background='';
+
+  updateProgress();
+
+  // Theory card
+  if(q.theory){
+    const tc=document.createElement('div');
+    tc.className='theory-card '+course.cls;
+    tc.innerHTML=`<div class="tc-title ${course.cls}">${q.theory.title}</div><div class="tc-body">${q.theory.body.replace(/\n/g,'<br>')}</div>`;
+    content.appendChild(tc);
+  }
+
+  // Question type badge
+  const qt=document.createElement('div');
+  qt.className='q-type';
+  qt.textContent=q.badge||q.type.toUpperCase();
+  content.appendChild(qt);
+
+  // Question text
+  const qtext=document.createElement('div');
+  qtext.className='q-text';
+  qtext.textContent=q.q;
+  content.appendChild(qtext);
+
+  // Image question
+  if(q.imgSrc){
+    const img=document.createElement('img');
+    img.src=q.imgSrc;img.alt=q.imgAlt||'';
+    img.style.cssText='width:100%;max-width:510px;border-radius:12px;margin-bottom:8px;';
+    content.appendChild(img);
+    if(q.caption){
+      const cap=document.createElement('div');
+      cap.style.cssText='font-size:11px;color:var(--muted);text-align:center;margin-bottom:12px;';
+      cap.textContent=q.caption;
+      content.appendChild(cap);
+    }
+  }
+
+  if(q.type==='mcq'||q.type==='imgq') renderMCQ(q,content,course);
+  else if(q.type==='fill') renderFill(q,content,course);
+  else if(q.type==='match') renderMatch(q,content,course);
+  else if(q.type==='order') renderOrder(q,content,course);
+  else if(q.type==='drag') renderDrag(q,content,course);
+  else if(q.type==='numeric') renderNumeric(q,content,course);
+}
+
+// ── MCQ ──
+function renderMCQ(q,content,course){
+  G._mcqSel=null;
+  const list=document.createElement('div');
+  list.className='mcq-list';
+  const labels='ABCD';
+  q.opts.forEach((opt,i)=>{
+    const btn=document.createElement('button');
+    btn.className='mopt';
+    btn.innerHTML=`<div class="ml">${labels[i]}</div><span>${opt}</span>`;
+    btn.onclick=()=>{
+      if(G.answered)return;
+      document.querySelectorAll('.mopt').forEach(b=>b.classList.remove('sel'));
+      btn.classList.add('sel');
+      G._mcqSel=i;
+      sfx.select();
+    };
+    list.appendChild(btn);
+  });
+  content.appendChild(list);
+}
+
+// ── FILL ──
+function renderFill(q,content,course){
+  G._fillAnswers=new Array(q.blanks.length).fill(null);
+  const sent=document.createElement('div');
+  sent.className='fill-sent';
+  q.tmpl.forEach(part=>{
+    if(part.startsWith('[')&&part.endsWith(']')){
+      const idx=parseInt(part.slice(1,-1));
+      const blank=document.createElement('span');
+      blank.className='fill-blank';
+      blank.dataset.idx=idx;
+      blank.textContent='___';
+      sent.appendChild(blank);
+    } else {
+      sent.appendChild(document.createTextNode(part));
+    }
+  });
+  content.appendChild(sent);
+
+  const bank=document.createElement('div');
+  bank.className='word-bank';
+  const shuffled=[...q.opts].sort(()=>Math.random()-.5);
+  shuffled.forEach(word=>{
+    const btn=document.createElement('button');
+    btn.className='wb-word';
+    btn.textContent=word;
+    btn.onclick=()=>{
+      if(G.answered)return;
+      const emptyIdx=G._fillAnswers.indexOf(null);
+      if(emptyIdx===-1)return;
+      G._fillAnswers[emptyIdx]=word;
+      btn.classList.add('used');
+      btn.disabled=true;
+      const blank=sent.querySelector('[data-idx="'+emptyIdx+'"]');
+      if(blank){blank.textContent=word;blank.classList.add('filled');}
+      sfx.select();
+    };
+    bank.appendChild(btn);
+  });
+  content.appendChild(bank);
+}
+
+// ── MATCH ──
+function renderMatch(q,content,course){
+  G._matchSel=null;G._matchPaired=new Set();
+  const wrap=document.createElement('div');
+  wrap.className='match-wrap';
+  const leftCol=document.createElement('div');leftCol.className='match-col';
+  const rightCol=document.createElement('div');rightCol.className='match-col';
+  leftCol.innerHTML='<div class="mc-hdr">Concepto</div>';
+  rightCol.innerHTML='<div class="mc-hdr">Definición</div>';
+
+  const shuffledRight=[...q.pairs].map((p,i)=>({text:p.R,origIdx:i})).sort(()=>Math.random()-.5);
+  G._matchMap={};
+  G._matchLeft=null;G._matchRight=null;
+
+  q.pairs.forEach((pair,li)=>{
+    const item=document.createElement('div');
+    item.className='match-item';
+    item.dataset.li=li;
+    item.textContent=pair.L;
+    item.onclick=()=>{
+      if(G.answered)return;
+      document.querySelectorAll('.match-item').forEach(i=>{if(i.dataset.li!==undefined&&!G._matchPaired.has('L'+i.dataset.li))i.classList.remove('sel');});
+      item.classList.add('sel');
+      G._matchLeft=li;
+      tryMatch();
+    };
+    leftCol.appendChild(item);
+  });
+
+  shuffledRight.forEach((pair,ri)=>{
+    const item=document.createElement('div');
+    item.className='match-item';
+    item.dataset.ri=ri;
+    item.dataset.orig=pair.origIdx;
+    item.textContent=pair.text;
+    item.onclick=()=>{
+      if(G.answered)return;
+      document.querySelectorAll('.match-item').forEach(i=>{if(i.dataset.ri!==undefined&&!G._matchPaired.has('R'+i.dataset.ri))i.classList.remove('sel');});
+      item.classList.add('sel');
+      G._matchRight=ri;
+      tryMatch();
+    };
+    rightCol.appendChild(item);
+  });
+
+  function tryMatch(){
+    if(G._matchLeft===null||G._matchRight===null)return;
+    const li=G._matchLeft,ri=G._matchRight;
+    G._matchLeft=null;G._matchRight=null;
+    const rItem=rightCol.querySelector('[data-ri="'+ri+'"]');
+    const lItem=leftCol.querySelector('[data-li="'+li+'"]');
+    const origIdx=parseInt(rItem.dataset.orig);
+    if(origIdx===li){
+      G._matchMap[li]=ri;
+      G._matchPaired.add('L'+li);G._matchPaired.add('R'+ri);
+      lItem.classList.remove('sel');lItem.classList.add('paired');
+      rItem.classList.remove('sel');rItem.classList.add('paired');
+      sfx.correct();
+    } else {
+      lItem.classList.add('bad-m');rItem.classList.add('bad-m');
+      sfx.wrong();
+      setTimeout(()=>{lItem.classList.remove('sel','bad-m');rItem.classList.remove('sel','bad-m');},600);
+    }
+  }
+
+  wrap.appendChild(leftCol);wrap.appendChild(rightCol);
+  content.appendChild(wrap);
+}
+
+// ── ORDER ──
+function renderOrder(q,content,course){
+  const items=[...q.steps.keys()].sort(()=>Math.random()-.5);
+  G._orderItems=items.map(i=>q.steps[i]);
+  G._orderOrigOrder=items;
+
+  const list=document.createElement('div');
+  list.className='order-list';
+  list.id='order-list';
+
+  items.forEach((origIdx)=>{
+    const item=document.createElement('div');
+    item.className='order-item';
+    item.draggable=true;
+    item.dataset.orig=origIdx;
+    item.innerHTML=`<span class="order-handle">⠿</span><span>${q.steps[origIdx]}</span>`;
+    setupOrderDrag(item,list);
+    list.appendChild(item);
+  });
+  content.appendChild(list);
+
+  // Touch support
+  setupOrderTouch(list,q);
+}
+
+function setupOrderDrag(item,list){
+  item.addEventListener('dragstart',e=>{
+    item.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed='move';
+  });
+  item.addEventListener('dragend',()=>{
+    item.classList.remove('is-dragging');
+    list.querySelectorAll('.order-item').forEach(i=>i.classList.remove('drag-over-top','drag-over-bottom'));
+  });
+  item.addEventListener('dragover',e=>{
+    e.preventDefault();
+    const dragging=list.querySelector('.is-dragging');
+    if(!dragging||dragging===item)return;
+    const rect=item.getBoundingClientRect();
+    const mid=rect.top+rect.height/2;
+    item.classList.remove('drag-over-top','drag-over-bottom');
+    if(e.clientY<mid){
+      item.classList.add('drag-over-top');
+      list.insertBefore(dragging,item);
+    } else {
+      item.classList.add('drag-over-bottom');
+      list.insertBefore(dragging,item.nextSibling);
+    }
+  });
+}
+
+function setupOrderTouch(list){
+  let dragEl=null,startY=0,clone=null;
+  list.addEventListener('touchstart',e=>{
+    const item=e.target.closest('.order-item');
+    if(!item)return;
+    dragEl=item;
+    startY=e.touches[0].clientY;
+    clone=item.cloneNode(true);
+    clone.style.cssText='position:fixed;opacity:.8;pointer-events:none;z-index:999;width:'+item.offsetWidth+'px;left:'+item.getBoundingClientRect().left+'px;top:'+item.getBoundingClientRect().top+'px;';
+    document.body.appendChild(clone);
+    item.classList.add('is-dragging');
+  },{passive:true});
+  list.addEventListener('touchmove',e=>{
+    if(!dragEl)return;
+    e.preventDefault();
+    const touch=e.touches[0];
+    if(clone)clone.style.top=(touch.clientY-30)+'px';
+    const el=document.elementFromPoint(touch.clientX,touch.clientY);
+    const over=el&&el.closest('.order-item');
+    if(over&&over!==dragEl){
+      const rect=over.getBoundingClientRect();
+      if(touch.clientY<rect.top+rect.height/2)list.insertBefore(dragEl,over);
+      else list.insertBefore(dragEl,over.nextSibling);
+    }
+  },{passive:false});
+  list.addEventListener('touchend',()=>{
+    if(dragEl)dragEl.classList.remove('is-dragging');
+    if(clone){clone.remove();clone=null;}
+    dragEl=null;
+  });
+}
+
+// ── DRAG CLASSIFY ──
+function renderDrag(q,content,course){
+  const scene=document.createElement('div');
+  scene.className='drag-scene';
+
+  const zones=document.createElement('div');
+  zones.className='drop-zones';
+  q.zones.forEach((z,zi)=>{
+    const zone=document.createElement('div');
+    zone.className='drop-z';
+    zone.dataset.zone=zi;
+    zone.innerHTML=`<div class="dz-lbl">${z}</div>`;
+    zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('over');});
+    zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
+    zone.addEventListener('drop',e=>{
+      e.preventDefault();
+      zone.classList.remove('over');
+      const chipIdx=e.dataTransfer.getData('idx');
+      const chip=document.querySelector('[data-chip="'+chipIdx+'"]');
+      if(chip){chip.dataset.zone=zi;zone.appendChild(chip);}
+    });
+    zones.appendChild(zone);
+  });
+  scene.appendChild(zones);
+
+  const bank=document.createElement('div');
+  bank.className='d-bank';
+  bank.innerHTML='<div class="db-lbl">Elementos</div>';
+  bank.addEventListener('dragover',e=>{e.preventDefault();});
+  bank.addEventListener('drop',e=>{
+    e.preventDefault();
+    const chipIdx=e.dataTransfer.getData('idx');
+    const chip=document.querySelector('[data-chip="'+chipIdx+'"]');
+    if(chip){chip.dataset.zone='-1';bank.appendChild(chip);}
+  });
+
+  q.items.forEach((item,i)=>{
+    const chip=document.createElement('div');
+    chip.className='d-chip active-chip';
+    chip.dataset.chip=i;
+    chip.dataset.zone='-1';
+    chip.textContent=item.t;
+    chip.draggable=true;
+    chip.addEventListener('dragstart',e=>{
+      chip.classList.add('dragging');
+      e.dataTransfer.setData('idx',i);
+    });
+    chip.addEventListener('dragend',()=>chip.classList.remove('dragging'));
+
+    // Touch drag
+    let tc=null,origParent=null;
+    chip.addEventListener('touchstart',e=>{
+      tc=e.touches[0];origParent=chip.parentNode;
+      chip.classList.add('dragging');
+    },{passive:true});
+    chip.addEventListener('touchmove',e=>{
+      e.preventDefault();
+      const t=e.touches[0];
+      chip.style.position='fixed';
+      chip.style.left=(t.clientX-40)+'px';
+      chip.style.top=(t.clientY-20)+'px';
+      chip.style.zIndex=999;
+    },{passive:false});
+    chip.addEventListener('touchend',e=>{
+      chip.classList.remove('dragging');
+      chip.style.position='';chip.style.left='';chip.style.top='';chip.style.zIndex='';
+      const t=e.changedTouches[0];
+      const el=document.elementFromPoint(t.clientX,t.clientY);
+      const zone=el&&el.closest('.drop-z');
+      if(zone){chip.dataset.zone=zone.dataset.zone;zone.appendChild(chip);}
+      else{chip.dataset.zone='-1';origParent.appendChild(chip);}
+    });
+    bank.appendChild(chip);
+  });
+  scene.appendChild(bank);
+  content.appendChild(scene);
+}
+
+// ── NUMERIC ──
+function renderNumeric(q,content,course){
+  G._numVal=null;
+  const wrap=document.createElement('div');
+  wrap.className='numeric-wrap';
+  if(q.numLabel){
+    const lbl=document.createElement('div');
+    lbl.className='num-label';
+    lbl.textContent=q.numLabel;
+    wrap.appendChild(lbl);
+  }
+  const row=document.createElement('div');
+  row.className='num-input-row';
+  const input=document.createElement('input');
+  input.type='number';input.className='num-input';input.placeholder='Tu respuesta';
+  input.addEventListener('input',()=>{G._numVal=parseFloat(input.value);});
+  row.appendChild(input);
+  if(q.unit){
+    const u=document.createElement('span');
+    u.className='num-unit';u.textContent=q.unit;
+    row.appendChild(u);
+  }
+  wrap.appendChild(row);
+  content.appendChild(wrap);
+}
+
+// ══════════════════════════════════════════════════
+// VERIFY + FEEDBACK
+// ══════════════════════════════════════════════════
+function verifyAnswer(){
+  if(G.answered)return;
+  const phase=G.activeLesson.phases[G.activePhase];
+  const q=phase.qs[G.qIdx];
+  const course=getCourse(G.activeCourse);
+  let correct=false;
+
+  if(q.type==='mcq'||q.type==='imgq'){
+    if(G._mcqSel===null)return;
+    correct=G._mcqSel===q.correct;
+    document.querySelectorAll('.mopt').forEach((btn,i)=>{
+      btn.disabled=true;
+      if(i===q.correct)btn.classList.add('ok');
+      else if(i===G._mcqSel&&!correct)btn.classList.add('bad');
+      else btn.classList.add('wrong-dim');
+    });
+    // Show wrong explanations
+    if(!correct&&q.wrongExps){
+      const wrongPanel=document.getElementById('fb-wrong-opts');
+      const wrongBody=document.getElementById('fb-wrong-opts-body');
+      wrongPanel.style.display='block';
+      wrongBody.innerHTML=q.opts.map((opt,i)=>{
+        if(i===q.correct||i===G._mcqSel)return'';
+        if(!q.wrongExps[i])return'';
+        return`<div style="margin-bottom:6px;font-size:12px;color:var(--muted)"><strong style="color:var(--bad)">${'ABCD'[i]}:</strong> ${q.wrongExps[i]}</div>`;
+      }).join('');
+    }
+  } else if(q.type==='fill'){
+    correct=G._fillAnswers.every((a,i)=>a===q.blanks[i]);
+    const blanks=document.querySelectorAll('.fill-blank');
+    blanks.forEach((b,i)=>{
+      if(G._fillAnswers[i]===q.blanks[i])b.classList.add('filled');
+      else{b.classList.add('wrong-b');b.textContent=q.blanks[i];}
+    });
+  } else if(q.type==='match'){
+    const allPaired=Object.keys(G._matchMap).length===q.pairs.length;
+    correct=allPaired&&Object.entries(G._matchMap).every(([li,ri])=>{
+      const rItem=document.querySelector('[data-ri="'+ri+'"]');
+      return rItem&&parseInt(rItem.dataset.orig)===parseInt(li);
+    });
+  } else if(q.type==='order'){
+    const items=document.querySelectorAll('#order-list .order-item');
+    const userOrder=[...items].map(i=>parseInt(i.dataset.orig));
+    correct=q.order.every((v,i)=>v===userOrder[i]);
+    items.forEach((item,i)=>{
+      if(q.order[i]===parseInt(item.dataset.orig))item.classList.add('placed-correct');
+      else item.classList.add('placed-wrong');
+    });
+  } else if(q.type==='drag'){
+    const chips=document.querySelectorAll('.d-chip');
+    const allPlaced=[...chips].every(c=>c.dataset.zone!=='-1');
+    if(!allPlaced)return;
+    correct=[...chips].every((c,i)=>parseInt(c.dataset.zone)===q.items[i].c);
+    chips.forEach((c,i)=>{
+      const zone=document.querySelector('[data-zone="'+c.dataset.zone+'"]');
+      if(zone){zone.classList.add(q.items[i].c===parseInt(c.dataset.zone)?'ok':'bad');}
+    });
+  } else if(q.type==='numeric'){
+    if(G._numVal===null)return;
+    const tol=q.tolerance||0.01;
+    correct=Math.abs(G._numVal-q.answer)/q.answer<=tol;
+    const input=document.querySelector('.num-input');
+    if(input)input.classList.add(correct?'ok':'bad');
+  }
+
+  G.answered=true;
+  handleResult(correct,q);
+}
+
+function handleResult(correct,q){
+  const course=getCourse(G.activeCourse);
+  if(correct){
+    G.streak++;G.maxStreak=Math.max(G.maxStreak,G.streak);
+    G.combo++;
+    sfx.correct();
+    spawnXpFloat('+XP');
+    showFeedback(true,q,course);
+    if(G.combo>=5)showCombo();
+    checkAchievements();
+  } else {
+    G.streak=0;G.combo=0;
+    G.hearts--;
+    G.wrongAnswers.push(q);
+    sfx.wrong();
+    renderHearts();
+    document.getElementById('les-content').classList.add('shake');
+    setTimeout(()=>document.getElementById('les-content').classList.remove('shake'),300);
+    showFeedback(false,q,course);
+    if(G.hearts<=0){
+      setTimeout(()=>{
+        alert('¡Sin vidas! Inténtalo de nuevo.');
+        showMap();
+      },1200);
+    }
+  }
+  save();
+}
+
+function showFeedback(correct,q,course){
+  const panel=document.getElementById('fb-panel');
+  const title=document.getElementById('fb-title');
+  const exp=document.getElementById('fb-exp');
+
+  panel.className='fb-panel show '+(correct?'ok-panel':'bad-panel');
+  title.textContent=correct?'¡Correcto! 🎉':'Incorrecto 😞';
+  title.style.color=correct?'var(--ok)':'var(--bad)';
+  exp.textContent=q.exp||'';
+
+  // Steps
+  const stepsPanel=document.getElementById('fb-steps');
+  const stepsBody=document.getElementById('fb-steps-body');
+  if(q.steps&&!correct){
+    stepsPanel.style.display='block';
+    stepsBody.innerHTML=q.steps.map((s,i)=>`<div class="cs-step"><div class="cs-num">${i+1}</div><span>${s}</span></div>`).join('');
+  } else {
+    stepsPanel.style.display='none';
+  }
+}
+
+function nextQuestion(){
+  document.getElementById('fb-wrong-opts').style.display='none';
+  document.getElementById('fb-wrong-opts-body').innerHTML='';
+  document.getElementById('fb-panel').classList.remove('show','ok-panel','bad-panel');
+
+  if(G.hearts<=0)return;
+
+  const phase=G.activeLesson.phases[G.activePhase];
+  G.qIdx++;
+
+  if(G.qIdx>=phase.qs.length){
+    finishPhase();
+  } else {
+    renderQuestion();
+  }
+}
+
+// ══════════════════════════════════════════════════
+// PHASE COMPLETE
+// ══════════════════════════════════════════════════
+function finishPhase(){
+  const lesson=G.activeLesson;
+  const phase=lesson.phases[G.activePhase];
+  const course=getCourse(G.activeCourse);
+  const cs=getCourseState(G.activeCourse);
+
+  if(!cs.progress[lesson.id])cs.progress[lesson.id]={phases:0,xp:0};
+  cs.progress[lesson.id].phases=Math.max(cs.progress[lesson.id].phases,G.activePhase+1);
+  cs.progress[lesson.id].xp=(cs.progress[lesson.id].xp||0)+phase.xp;
+
+  const correct=phase.qs.length-G.wrongAnswers.filter(w=>phase.qs.includes(w)).length;
+  const accuracy=Math.round(correct/phase.qs.length*100);
+
+  G.xp+=phase.xp;
+  G.phasesDone++;
+  sfx.phase();
+
+  document.getElementById('pd-xp').textContent=phase.xp;
+  document.getElementById('pd-ok').textContent=correct;
+  document.getElementById('pd-bad').textContent=phase.qs.length-correct;
+  document.getElementById('pd-acc').textContent=accuracy+'%';
+  document.getElementById('pd-title').textContent=accuracy===100?'¡Perfecto! ⭐':'¡Fase Completada!';
+
+  // Phase track dots
+  const track=document.getElementById('pd-track');
+  track.innerHTML=lesson.phases.map((p,i)=>{
+    const done=i<=G.activePhase;
+    return`<div class="phase-track-dot${done?' done':''}" style="${done?'background:var(--accent)':''}">${p.name}</div>`;
+  }).join('');
+
+  const nextPhaseIdx=G.activePhase+1;
+  const nextBtn=document.getElementById('pd-next-btn');
+  if(nextPhaseIdx<lesson.phases.length){
+    nextBtn.textContent='FASE '+(nextPhaseIdx+1)+' →';
+    nextBtn.onclick=()=>{G.activePhase=nextPhaseIdx;G.wrongAnswers=[];loadPhase(nextPhaseIdx);};
+  } else {
+    nextBtn.textContent='¡TERMINAR LECCIÓN!';
+    nextBtn.onclick=()=>finishLesson();
+  }
+
+  save();
+  showScreen('phase-done');
+}
+
+// ══════════════════════════════════════════════════
+// LESSON COMPLETE
+// ══════════════════════════════════════════════════
+function finishLesson(){
+  const lesson=G.activeLesson;
+  const course=getCourse(G.activeCourse);
+  const cs=getCourseState(G.activeCourse);
+  const allPhases=lesson.phases;
+  const totalCorrect=allPhases.reduce((a,p)=>a+p.qs.length,0)-G.wrongAnswers.length;
+  const totalQs=allPhases.reduce((a,p)=>a+p.qs.length,0);
+  const acc=Math.round(totalCorrect/totalQs*100);
+
+  // Mark mastered
+  if(acc>=80){
+    cs.mastered[lesson.id]=true;
+    G.lessonsMastered++;
+    sfx.master();
+  }
+
+  G.xp+=lesson.xpTotal;
+  document.getElementById('ld-xp').textContent=lesson.xpTotal;
+  document.getElementById('ld-ok').textContent=totalCorrect;
+  document.getElementById('ld-bad').textContent=G.wrongAnswers.length;
+  document.getElementById('ld-acc').textContent=acc+'%';
+  document.getElementById('ld-title').textContent=acc===100?'¡Maestría Total! 💎':'¡Lección Completada!';
+
+  const reviewBtn=document.getElementById('ld-review-btn');
+  const reviewNotice=document.getElementById('review-notice');
+  if(G.wrongAnswers.length>0){
+    document.getElementById('review-wrong-count').textContent=G.wrongAnswers.length;
+    reviewNotice.style.display='block';
+    reviewBtn.style.display='block';
+  } else {
+    reviewNotice.style.display='none';
+    reviewBtn.style.display='none';
+  }
+
+  checkAchievements();
+  save();
+  showScreen('lesson-done');
+}
+
+// ══════════════════════════════════════════════════
+// REVIEW MODE
+// ══════════════════════════════════════════════════
+function startReview(){
+  G.reviewMode=true;
+  G.reviewQs=[...G.wrongAnswers];
+  G.reviewIdx=0;
+  G.hearts=3;
+  G.wrongAnswers=[];
+  G.answered=false;
+
+  const course=getCourse(G.activeCourse);
+  document.body.className=course.mode;
+  const pill=document.getElementById('les-phase-pill');
+  pill.className='phase-pill review';
+  pill.textContent='🔄 Repaso';
+
+  document.getElementById('les-back').onclick=()=>{if(confirm('¿Salir del repaso?'))showMap();};
+  document.getElementById('fb-btn').onclick=()=>nextReviewQuestion();
+  document.getElementById('c-btn').onclick=()=>verifyAnswer();
+
+  renderHearts();
+  showScreen('lesson');
+  renderReviewQuestion();
+}
+
+function renderReviewQuestion(){
+  const q=G.reviewQs[G.reviewIdx];
+  const course=getCourse(G.activeCourse);
+  G.activeLesson={phases:[{qs:G.reviewQs}]};
+  G.activePhase=0;
+  G.qIdx=G.reviewIdx;
+  G.answered=false;
+
+  const pct=(G.reviewIdx/G.reviewQs.length)*100;
+  document.getElementById('les-prog-fill').style.width=pct+'%';
+  document.getElementById('fb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('c-btn').disabled=false;
+
+  const content=document.getElementById('les-content');
+  content.innerHTML='';
+
+  const qt=document.createElement('div');
+  qt.className='q-type';qt.textContent=q.badge||q.type.toUpperCase();
+  content.appendChild(qt);
+
+  const qtext=document.createElement('div');
+  qtext.className='q-text';qtext.textContent=q.q;
+  content.appendChild(qtext);
+
+  if(q.type==='mcq'||q.type==='imgq') renderMCQ(q,content,course);
+  else if(q.type==='fill') renderFill(q,content,course);
+  else if(q.type==='order') renderOrder(q,content,course);
+  else if(q.type==='drag') renderDrag(q,content,course);
+}
+
+function nextReviewQuestion(){
+  document.getElementById('fb-panel').classList.remove('show','ok-panel','bad-panel');
+  G.reviewIdx++;
+  if(G.reviewIdx>=G.reviewQs.length){
+    finishReview();
+  } else {
+    renderReviewQuestion();
+  }
+}
+
+function finishReview(){
+  const correct=G.reviewQs.length-G.wrongAnswers.length;
+  const acc=Math.round(correct/G.reviewQs.length*100);
+  G.xp+=20;
+  document.getElementById('rd-xp').textContent='+20';
+  document.getElementById('rd-ok').textContent=correct;
+  document.getElementById('rd-bad').textContent=G.wrongAnswers.length;
+  document.getElementById('rd-acc').textContent=acc+'%';
+  G.reviewMode=false;
+  checkAchievements();
+  save();
+  showScreen('review-done');
+}
+
+// ══════════════════════════════════════════════════
+// DIAMOND LESSON
+// ══════════════════════════════════════════════════
+function startDiamond(){
+  const course=getCourse(G.activeCourse);
+  G.isDiamond=true;
+  G.diamondQs=[...course.diamondLesson.qs];
+  G.diamondIdx=0;
+  G.diamondHearts=1;
+  G.wrongAnswers=[];
+  G.answered=false;
+
+  document.body.className=course.mode+' diamond-mode';
+  document.getElementById('diam-back').onclick=()=>{if(confirm('¿Salir del Reto Diamante?'))showMap();};
+  document.getElementById('dfb-btn').onclick=()=>nextDiamondQuestion();
+  document.getElementById('dc-btn').onclick=()=>verifyDiamond();
+
+  updateDiamondHearts();
+  showScreen('diamond-lesson');
+  renderDiamondQuestion();
+  sfx.diamondAmbient();
+}
+
+function updateDiamondHearts(){
+  document.getElementById('diam-hearts').textContent=G.diamondHearts>0?'❤️':'🖤';
+}
+
+function renderDiamondQuestion(){
+  const q=G.diamondQs[G.diamondIdx];
+  const course=getCourse(G.activeCourse);
+  const content=document.getElementById('diam-content');
+  content.innerHTML='';
+  G.answered=false;
+
+  document.getElementById('dfb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('dc-btn').disabled=false;
+
+  const pct=(G.diamondIdx/G.diamondQs.length)*100;
+  document.getElementById('diam-prog-fill').style.width=pct+'%';
+
+  const qt=document.createElement('div');
+  qt.className='q-type';qt.style.color='var(--diamond)';qt.textContent=q.badge||'DIAMANTE';
+  content.appendChild(qt);
+
+  const qtext=document.createElement('div');
+  qtext.className='q-text';qtext.textContent=q.q;
+  content.appendChild(qtext);
+
+  if(q.type==='mcq') renderMCQ(q,content,course);
+  else if(q.type==='fill') renderFill(q,content,course);
+  else if(q.type==='order') renderOrder(q,content,course);
+  else if(q.type==='drag') renderDrag(q,content,course);
+}
+
+function verifyDiamond(){
+  if(G.answered)return;
+  const q=G.diamondQs[G.diamondIdx];
+  let correct=false;
+
+  if(q.type==='mcq'){
+    if(G._mcqSel===null)return;
+    correct=G._mcqSel===q.correct;
+    document.querySelectorAll('.mopt').forEach((btn,i)=>{
+      btn.disabled=true;
+      if(i===q.correct)btn.classList.add('ok');
+      else if(i===G._mcqSel&&!correct)btn.classList.add('bad');
+      else btn.classList.add('wrong-dim');
+    });
+  } else if(q.type==='fill'){
+    correct=G._fillAnswers.every((a,i)=>a===q.blanks[i]);
+    const blanks=document.querySelectorAll('.fill-blank');
+    blanks.forEach((b,i)=>{
+      if(G._fillAnswers[i]===q.blanks[i])b.classList.add('filled');
+      else{b.classList.add('wrong-b');b.textContent=q.blanks[i];}
+    });
+  } else if(q.type==='order'){
+    const items=document.querySelectorAll('#order-list .order-item');
+    const userOrder=[...items].map(i=>parseInt(i.dataset.orig));
+    correct=q.order.every((v,i)=>v===userOrder[i]);
+    items.forEach((item,i)=>{
+      if(q.order[i]===parseInt(item.dataset.orig))item.classList.add('placed-correct');
+      else item.classList.add('placed-wrong');
+    });
+  }
+
+  G.answered=true;
+
+  const panel=document.getElementById('dfb-panel');
+  const title=document.getElementById('dfb-title');
+  const exp=document.getElementById('dfb-exp');
+
+  if(correct){
+    sfx.diamond();
+    title.textContent='💎 ¡Maestría!';
+    title.style.color='var(--diamond)';
+    panel.className='fb-panel show ok-panel';
+  } else {
+    sfx.diamondWrong();
+    G.diamondHearts=0;
+    updateDiamondHearts();
+    title.textContent='❌ Incorrecto';
+    title.style.color='var(--bad)';
+    panel.className='fb-panel show bad-panel';
+    setTimeout(()=>{
+      if(confirm('Has fallado en el Reto Diamante. ¿Intentarlo de nuevo?'))startDiamond();
+      else showMap();
+    },1500);
+  }
+  exp.textContent=q.exp||'';
+  panel.classList.add('show');
+}
+
+function nextDiamondQuestion(){
+  document.getElementById('dfb-panel').classList.remove('show','ok-panel','bad-panel');
+  G.diamondIdx++;
+  if(G.diamondIdx>=G.diamondQs.length){
+    finishDiamond();
+  } else {
+    renderDiamondQuestion();
+  }
+}
+
+function finishDiamond(){
+  const course=getCourse(G.activeCourse);
+  G.xp+=course.diamondLesson.xpTotal;
+  document.getElementById('dd-xp').textContent='+'+course.diamondLesson.xpTotal;
+  document.getElementById('dd-ok').textContent=G.diamondQs.length;
+  document.getElementById('dd-bad').textContent=0;
+  document.getElementById('dd-acc').textContent='100%';
+  sfx.master();
+  checkAchievements();
+  save();
+  showScreen('diamond-done');
+}
+
+// ══════════════════════════════════════════════════
+// ACHIEVEMENTS
+// ══════════════════════════════════════════════════
+function checkAchievements(){
+  const newAchs=[];
+  function check(id,cond){
+    if(cond&&!G.achUnlocked.has(id)){
+      G.achUnlocked.add(id);
+      newAchs.push(ACHS.find(a=>a.id===id));
+    }
+  }
+  const disc_cs=getCourseState('disc');
+  const clin_cs=getCourseState('clin');
+  const diana_cs=getCourseState('diana');
+
+  check('first_q',G.phasesDone>=1);
+  check('perfect_phase',G.hearts>=3&&G.phasesDone>=1);
+  check('streak5',G.maxStreak>=5);
+  check('streak10',G.maxStreak>=10);
+  check('disc_l0',disc_cs.mastered['d0']);
+  check('disc_l1',disc_cs.mastered['d1']);
+  check('disc_l2',disc_cs.mastered['d2']);
+  check('disc_l3',disc_cs.mastered['d3']);
+  check('disc_l4',disc_cs.mastered['d4']);
+  check('disc_all',DISC.lessons.every(l=>disc_cs.mastered[l.id]));
+  check('clin_l0',clin_cs.mastered['c0']);
+  check('clin_l1',clin_cs.mastered['c1']);
+  check('clin_l2',clin_cs.mastered['c2']);
+  check('clin_all',CLIN.lessons.every(l=>clin_cs.mastered[l.id]));
+  check('diana_l0',diana_cs.mastered['dn0']);
+  check('diana_l1',diana_cs.mastered['dn2']);
+  check('diana_l2',diana_cs.mastered['dn3']);
+  check('diana_all',DIANA.lessons.every(l=>diana_cs.mastered[l.id]));
+  check('both_all',DISC.lessons.every(l=>disc_cs.mastered[l.id])&&CLIN.lessons.every(l=>clin_cs.mastered[l.id])&&DIANA.lessons.every(l=>diana_cs.mastered[l.id]));
+  check('review_done',G.reviewMode===false&&G.reviewQs&&G.reviewQs.length>0);
+
+  newAchs.filter(Boolean).forEach((ach,i)=>{
+    setTimeout(()=>{
+      G.xp+=ach.xp;
+      showAchToast(ach);
+      sfx.ach();
+      save();
+    },i*1200);
+  });
+}
+
+function showAchToast(ach){
+  document.getElementById('at-ico').textContent=ach.icon;
+  document.getElementById('at-name').textContent=ach.name;
+  document.getElementById('at-xp').textContent='+'+ach.xp+' XP';
+  const toast=document.getElementById('ach-toast');
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'),2800);
+}
+
+function renderAchievements(){
+  const grid=document.getElementById('ach-grid');
+  const header=document.getElementById('ach-header');
+  const done=G.achUnlocked.size;
+  header.textContent='Logros desbloqueados: '+done+' / '+ACHS.length;
+  grid.innerHTML=ACHS.map(a=>{
+    const isDone=G.achUnlocked.has(a.id);
+    return`<div class="ach-card ${isDone?'done':'locked'}">
+      <div class="ach-icon">${a.icon}</div>
+      <div class="ach-name">${a.name}</div>
+      <div class="ach-desc">${a.desc}</div>
+      <div class="ach-status">${isDone?'✓ Desbloqueado':'🔒 Bloqueado'}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('a-xp').textContent=G.xp;
+}
+
+// ══════════════════════════════════════════════════
+// EFFECTS
+// ══════════════════════════════════════════════════
+function spawnXpFloat(text){
+  const el=document.createElement('div');
+  el.className='xp-float';
+  el.textContent=text;
+  el.style.left=Math.random()*60+20+'%';
+  el.style.top='40%';
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1000);
+}
+
+function showCombo(){
+  document.getElementById('combo-n').textContent=G.combo;
+  const badge=document.getElementById('combo-badge');
+  badge.classList.add('show');
+  setTimeout(()=>badge.classList.remove('show'),1200);
+}
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded',()=>{
+  load();
+  updateHomeUI();
+
+  // Achievements screen
+  document.getElementById('achievements').addEventListener('focus',renderAchievements,{once:false});
+  const origShow=showScreen;
+  window.showScreen=function(id){
+    origShow(id);
+    if(id==='achievements')renderAchievements();
+  };
+});
+</script>
+</body>
+</html>
