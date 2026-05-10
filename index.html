@@ -710,7 +710,7 @@ const sfx={
       drone.connect(droneG);droneG.connect(a.destination);
       drone.type='sine';drone.frequency.value=55;droneG.gain.value=.04;
       drone.start();
-      setTimeout(()=>{droneG.gain.exponentialRampToValueAtTime(.001,a.currentTime+2);drone.stop(a.currentTime+2);},(S.isDiamond?10000:0));
+      setTimeout(()=>{droneG.gain.exponentialRampToValueAtTime(.001,a.currentTime+2);drone.stop(a.currentTime+2);},(G.isDiamond?10000:0));
     }catch(e){}
   }
 };
@@ -1447,6 +1447,7 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   const el=document.getElementById(id);
   if(el){el.classList.add('active');el.scrollTop=0;}
+  if(id==='achievements')renderAchievements();
 }
 
 function showHome(){
@@ -1642,6 +1643,12 @@ function startLesson(lesson,lessonIdx){
   loadPhase(phaseIdx);
 }
 
+function shuffleArray(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+
 function loadPhase(phaseIdx){
   const lesson=G.activeLesson;
   const phase=lesson.phases[phaseIdx];
@@ -1651,6 +1658,8 @@ function loadPhase(phaseIdx){
   G.hearts=3;
   G.answered=false;
   G.combo=0;
+  // Shuffle question order for this phase
+  G._phaseQs=shuffleArray(phase.qs);
 
   document.body.className=course.mode;
   const pill=document.getElementById('les-phase-pill');
@@ -1672,14 +1681,14 @@ function renderHearts(){
 }
 
 function updateProgress(){
-  const phase=G.activeLesson.phases[G.activePhase];
-  const pct=G.qIdx/phase.qs.length*100;
+  const qs=G._phaseQs||G.activeLesson.phases[G.activePhase].qs;
+  const pct=G.qIdx/qs.length*100;
   document.getElementById('les-prog-fill').style.width=pct+'%';
 }
 
 function renderQuestion(){
-  const phase=G.activeLesson.phases[G.activePhase];
-  const q=phase.qs[G.qIdx];
+  const qs=G._phaseQs||G.activeLesson.phases[G.activePhase].qs;
+  const q=qs[G.qIdx];
   const course=getCourse(G.activeCourse);
   const content=document.getElementById('les-content');
   content.innerHTML='';
@@ -1738,10 +1747,19 @@ function renderQuestion(){
 // ── MCQ ──
 function renderMCQ(q,content,course){
   G._mcqSel=null;
+  G._shuffleIndices=null;
   const list=document.createElement('div');
   list.className='mcq-list';
   const labels='ABCD';
-  q.opts.forEach((opt,i)=>{
+
+  // Shuffle options while tracking the correct answer
+  const indices=q.opts.map((_,i)=>i);
+  for(let i=indices.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[indices[i],indices[j]]=[indices[j],indices[i]];}
+  const shuffledOpts=indices.map(i=>q.opts[i]);
+  G._mcqCorrect=indices.indexOf(q.correct); // new position of correct answer
+  G._shuffleIndices=indices; // shuffled[i] = original index indices[i]
+
+  shuffledOpts.forEach((opt,i)=>{
     const btn=document.createElement('button');
     btn.className='mopt';
     btn.innerHTML=`<div class="ml">${labels[i]}</div><span>${opt}</span>`;
@@ -2060,17 +2078,18 @@ function renderNumeric(q,content,course){
 // ══════════════════════════════════════════════════
 function verifyAnswer(){
   if(G.answered)return;
-  const phase=G.activeLesson.phases[G.activePhase];
-  const q=phase.qs[G.qIdx];
+  const qs=G._phaseQs||G.activeLesson.phases[G.activePhase].qs;
+  const q=qs[G.qIdx];
   const course=getCourse(G.activeCourse);
   let correct=false;
 
   if(q.type==='mcq'||q.type==='imgq'){
     if(G._mcqSel===null)return;
-    correct=G._mcqSel===q.correct;
+    const corrIdx=G._mcqCorrect!==undefined?G._mcqCorrect:q.correct;
+    correct=G._mcqSel===corrIdx;
     document.querySelectorAll('.mopt').forEach((btn,i)=>{
       btn.disabled=true;
-      if(i===q.correct)btn.classList.add('ok');
+      if(i===corrIdx)btn.classList.add('ok');
       else if(i===G._mcqSel&&!correct)btn.classList.add('bad');
       else btn.classList.add('wrong-dim');
     });
@@ -2079,10 +2098,12 @@ function verifyAnswer(){
       const wrongPanel=document.getElementById('fb-wrong-opts');
       const wrongBody=document.getElementById('fb-wrong-opts-body');
       wrongPanel.style.display='block';
-      wrongBody.innerHTML=q.opts.map((opt,i)=>{
-        if(i===q.correct||i===G._mcqSel)return'';
-        if(!q.wrongExps[i])return'';
-        return`<div style="margin-bottom:6px;font-size:12px;color:var(--muted)"><strong style="color:var(--bad)">${'ABCD'[i]}:</strong> ${q.wrongExps[i]}</div>`;
+      const labels='ABCD';
+      const indices=G._shuffleIndices||q.opts.map((_,i)=>i);
+      wrongBody.innerHTML=indices.map((origIdx,shuffledPos)=>{
+        if(shuffledPos===corrIdx||shuffledPos===G._mcqSel)return'';
+        if(!q.wrongExps||!q.wrongExps[origIdx])return'';
+        return`<div style="margin-bottom:6px;font-size:12px;color:var(--muted)"><strong style="color:var(--bad)">${labels[shuffledPos]}:</strong> ${q.wrongExps[origIdx]}</div>`;
       }).join('');
     }
   } else if(q.type==='fill'){
@@ -2090,11 +2111,12 @@ function verifyAnswer(){
     const blanks=document.querySelectorAll('.fill-blank');
     blanks.forEach((b,i)=>{
       if(G._fillAnswers[i]===q.blanks[i])b.classList.add('filled');
-      else{b.classList.add('wrong-b');b.textContent=q.blanks[i];}
+      else{b.classList.remove('filled');b.classList.add('wrong-b');b.textContent=q.blanks[i];}
     });
   } else if(q.type==='match'){
     const allPaired=Object.keys(G._matchMap).length===q.pairs.length;
-    correct=allPaired&&Object.entries(G._matchMap).every(([li,ri])=>{
+    if(!allPaired)return; // require all pairs before verifying
+    correct=Object.entries(G._matchMap).every(([li,ri])=>{
       const rItem=document.querySelector('[data-ri="'+ri+'"]');
       return rItem&&parseInt(rItem.dataset.orig)===parseInt(li);
     });
@@ -2110,10 +2132,14 @@ function verifyAnswer(){
     const chips=document.querySelectorAll('.d-chip');
     const allPlaced=[...chips].every(c=>c.dataset.zone!=='-1');
     if(!allPlaced)return;
-    correct=[...chips].every((c,i)=>parseInt(c.dataset.zone)===q.items[i].c);
-    chips.forEach((c,i)=>{
+    correct=[...chips].every(c=>{
+      const itemIdx=parseInt(c.dataset.chip);
+      return parseInt(c.dataset.zone)===q.items[itemIdx].c;
+    });
+    chips.forEach(c=>{
+      const itemIdx=parseInt(c.dataset.chip);
       const zone=document.querySelector('[data-zone="'+c.dataset.zone+'"]');
-      if(zone){zone.classList.add(q.items[i].c===parseInt(c.dataset.zone)?'ok':'bad');}
+      if(zone){zone.classList.add(q.items[itemIdx].c===parseInt(c.dataset.zone)?'ok':'bad');}
     });
   } else if(q.type==='numeric'){
     if(G._numVal===null)return;
@@ -2161,7 +2187,7 @@ function showFeedback(correct,q,course){
   const title=document.getElementById('fb-title');
   const exp=document.getElementById('fb-exp');
 
-  panel.className='fb-panel show '+(correct?'ok-panel':'bad-panel');
+  panel.className='fb-panel show '+(correct?'fb-ok':'fb-bad');
   title.textContent=correct?'¡Correcto! 🎉':'Incorrecto 😞';
   title.style.color=correct?'var(--ok)':'var(--bad)';
   exp.textContent=q.exp||'';
@@ -2180,14 +2206,14 @@ function showFeedback(correct,q,course){
 function nextQuestion(){
   document.getElementById('fb-wrong-opts').style.display='none';
   document.getElementById('fb-wrong-opts-body').innerHTML='';
-  document.getElementById('fb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('fb-panel').classList.remove('show','fb-ok','fb-bad');
 
   if(G.hearts<=0)return;
 
-  const phase=G.activeLesson.phases[G.activePhase];
+  const qs=G._phaseQs||G.activeLesson.phases[G.activePhase].qs;
   G.qIdx++;
 
-  if(G.qIdx>=phase.qs.length){
+  if(G.qIdx>=qs.length){
     finishPhase();
   } else {
     renderQuestion();
@@ -2207,8 +2233,9 @@ function finishPhase(){
   cs.progress[lesson.id].phases=Math.max(cs.progress[lesson.id].phases,G.activePhase+1);
   cs.progress[lesson.id].xp=(cs.progress[lesson.id].xp||0)+phase.xp;
 
-  const correct=phase.qs.length-G.wrongAnswers.filter(w=>phase.qs.includes(w)).length;
-  const accuracy=Math.round(correct/phase.qs.length*100);
+  const phaseQs=G._phaseQs||phase.qs;
+  const correct=phaseQs.length-G.wrongAnswers.filter(w=>phaseQs.includes(w)).length;
+  const accuracy=Math.round(correct/phaseQs.length*100);
 
   G.xp+=phase.xp;
   G.phasesDone++;
@@ -2216,7 +2243,7 @@ function finishPhase(){
 
   document.getElementById('pd-xp').textContent=phase.xp;
   document.getElementById('pd-ok').textContent=correct;
-  document.getElementById('pd-bad').textContent=phase.qs.length-correct;
+  document.getElementById('pd-bad').textContent=phaseQs.length-correct;
   document.getElementById('pd-acc').textContent=accuracy+'%';
   document.getElementById('pd-title').textContent=accuracy===100?'¡Perfecto! ⭐':'¡Fase Completada!';
 
@@ -2224,7 +2251,7 @@ function finishPhase(){
   const track=document.getElementById('pd-track');
   track.innerHTML=lesson.phases.map((p,i)=>{
     const done=i<=G.activePhase;
-    return`<div class="phase-track-dot${done?' done':''}" style="${done?'background:var(--accent)':''}">${p.name}</div>`;
+    return`<div class="pt-dot${done?' done':''}">${p.name}</div>`;
   }).join('');
 
   const nextPhaseIdx=G.activePhase+1;
@@ -2253,15 +2280,16 @@ function finishLesson(){
   const totalQs=allPhases.reduce((a,p)=>a+p.qs.length,0);
   const acc=Math.round(totalCorrect/totalQs*100);
 
-  // Mark mastered
+  // Mark mastered — bonus XP only if newly mastered
+  const masteryBonus=acc>=80&&!cs.mastered[lesson.id]?Math.round(lesson.xpTotal*0.5):0;
   if(acc>=80){
     cs.mastered[lesson.id]=true;
     G.lessonsMastered++;
+    G.xp+=masteryBonus;
     sfx.master();
   }
 
-  G.xp+=lesson.xpTotal;
-  document.getElementById('ld-xp').textContent=lesson.xpTotal;
+  document.getElementById('ld-xp').textContent=lesson.xpTotal+(masteryBonus?` +${masteryBonus} 🏆`:'');
   document.getElementById('ld-ok').textContent=totalCorrect;
   document.getElementById('ld-bad').textContent=G.wrongAnswers.length;
   document.getElementById('ld-acc').textContent=acc+'%';
@@ -2319,7 +2347,7 @@ function renderReviewQuestion(){
 
   const pct=(G.reviewIdx/G.reviewQs.length)*100;
   document.getElementById('les-prog-fill').style.width=pct+'%';
-  document.getElementById('fb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('fb-panel').classList.remove('show','fb-ok','fb-bad');
   document.getElementById('c-btn').disabled=false;
 
   const content=document.getElementById('les-content');
@@ -2340,7 +2368,7 @@ function renderReviewQuestion(){
 }
 
 function nextReviewQuestion(){
-  document.getElementById('fb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('fb-panel').classList.remove('show','fb-ok','fb-bad');
   G.reviewIdx++;
   if(G.reviewIdx>=G.reviewQs.length){
     finishReview();
@@ -2369,7 +2397,7 @@ function finishReview(){
 function startDiamond(){
   const course=getCourse(G.activeCourse);
   G.isDiamond=true;
-  G.diamondQs=[...course.diamondLesson.qs];
+  G.diamondQs=shuffleArray(course.diamondLesson.qs);
   G.diamondIdx=0;
   G.diamondHearts=1;
   G.wrongAnswers=[];
@@ -2397,7 +2425,7 @@ function renderDiamondQuestion(){
   content.innerHTML='';
   G.answered=false;
 
-  document.getElementById('dfb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('dfb-panel').classList.remove('show','fb-ok','fb-bad');
   document.getElementById('dc-btn').disabled=false;
 
   const pct=(G.diamondIdx/G.diamondQs.length)*100;
@@ -2424,10 +2452,11 @@ function verifyDiamond(){
 
   if(q.type==='mcq'){
     if(G._mcqSel===null)return;
-    correct=G._mcqSel===q.correct;
+    const corrIdx=G._mcqCorrect!==undefined?G._mcqCorrect:q.correct;
+    correct=G._mcqSel===corrIdx;
     document.querySelectorAll('.mopt').forEach((btn,i)=>{
       btn.disabled=true;
-      if(i===q.correct)btn.classList.add('ok');
+      if(i===corrIdx)btn.classList.add('ok');
       else if(i===G._mcqSel&&!correct)btn.classList.add('bad');
       else btn.classList.add('wrong-dim');
     });
@@ -2436,7 +2465,7 @@ function verifyDiamond(){
     const blanks=document.querySelectorAll('.fill-blank');
     blanks.forEach((b,i)=>{
       if(G._fillAnswers[i]===q.blanks[i])b.classList.add('filled');
-      else{b.classList.add('wrong-b');b.textContent=q.blanks[i];}
+      else{b.classList.remove('filled');b.classList.add('wrong-b');b.textContent=q.blanks[i];}
     });
   } else if(q.type==='order'){
     const items=document.querySelectorAll('#order-list .order-item');
@@ -2458,14 +2487,14 @@ function verifyDiamond(){
     sfx.diamond();
     title.textContent='💎 ¡Maestría!';
     title.style.color='var(--diamond)';
-    panel.className='fb-panel show ok-panel';
+    panel.className='fb-panel show fb-ok';
   } else {
     sfx.diamondWrong();
     G.diamondHearts=0;
     updateDiamondHearts();
     title.textContent='❌ Incorrecto';
     title.style.color='var(--bad)';
-    panel.className='fb-panel show bad-panel';
+    panel.className='fb-panel show fb-bad';
     setTimeout(()=>{
       if(confirm('Has fallado en el Reto Diamante. ¿Intentarlo de nuevo?'))startDiamond();
       else showMap();
@@ -2476,7 +2505,7 @@ function verifyDiamond(){
 }
 
 function nextDiamondQuestion(){
-  document.getElementById('dfb-panel').classList.remove('show','ok-panel','bad-panel');
+  document.getElementById('dfb-panel').classList.remove('show','fb-ok','fb-bad');
   G.diamondIdx++;
   if(G.diamondIdx>=G.diamondQs.length){
     finishDiamond();
@@ -2528,8 +2557,8 @@ function checkAchievements(){
   check('clin_l2',clin_cs.mastered['c2']);
   check('clin_all',CLIN.lessons.every(l=>clin_cs.mastered[l.id]));
   check('diana_l0',diana_cs.mastered['dn0']);
-  check('diana_l1',diana_cs.mastered['dn2']);
-  check('diana_l2',diana_cs.mastered['dn3']);
+  check('diana_l1',diana_cs.mastered['dn1']);
+  check('diana_l2',diana_cs.mastered['dn2']);
   check('diana_all',DIANA.lessons.every(l=>diana_cs.mastered[l.id]));
   check('both_all',DISC.lessons.every(l=>disc_cs.mastered[l.id])&&CLIN.lessons.every(l=>clin_cs.mastered[l.id])&&DIANA.lessons.every(l=>diana_cs.mastered[l.id]));
   check('review_done',G.reviewMode===false&&G.reviewQs&&G.reviewQs.length>0);
@@ -2596,14 +2625,6 @@ function showCombo(){
 document.addEventListener('DOMContentLoaded',()=>{
   load();
   updateHomeUI();
-
-  // Achievements screen
-  document.getElementById('achievements').addEventListener('focus',renderAchievements,{once:false});
-  const origShow=showScreen;
-  window.showScreen=function(id){
-    origShow(id);
-    if(id==='achievements')renderAchievements();
-  };
 });
 </script>
 </body>
